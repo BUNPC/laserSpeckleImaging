@@ -46,6 +46,8 @@ dataFiles=dataFiles(order);
 if ~isempty(burstN)
     dataFiles=dataFiles(burstStart:burstStart+burstN-1);
 end
+
+tic;
 [subdata, ~, timeStamp]=readSingleIMG(dataFiles(1).name);
 
 imgsPerBurst=size(subdata,3);
@@ -66,6 +68,10 @@ elseif strcmp(lscType,'tLSCI')
     subLSCI=getTLSCI(subdata,kernelSize,procType,'kernel');
 end
 subLSCI=mean(subLSCI,3);
+elapsedTime=toc;
+
+disp(['Current time is ', datestr(now,'HH:mm:ss')]);
+disp([num2str(filesN),' burst files to process. Remaining time is approximately ~',num2str(elapsedTime*filesN),'s'])
 
 LSCI=zeros(size(subLSCI,1),size(subLSCI,2),filesN,'single');
 LSCI(:,:,1)=subLSCI;
@@ -80,6 +86,7 @@ for i=2:1:filesN
     subLSCI=mean(subLSCI,3);
     LSCI(:,:,i)=subLSCI;
     time(i)=getTime(timeStamp);
+    waitbar(i./filesN);
 end
 time=time-time(1);
 
