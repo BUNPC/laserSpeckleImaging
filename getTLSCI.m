@@ -6,13 +6,15 @@
 %    data       - raw laser speckle data as 3d [y,x,t] matrix
 %    kernelSize - number of pixels in a side of the kernel
 %    procType   - choose the processor type: use 'cpu' or 'gpu'
-%    dsType     - downsampling type result is either same size as data or 
+%                 'cpu' is default
+%    dsType     - downsampling type result is either same size as data or
 %                 downsampled by kernel size. Use: 'none' or 'kernel'
+%                 'none' is default
 %
 % Outputs:
 %    tLSCI      - processed data as [y,x,t] 3d matrix
 %
-% Example: 
+% Example:
 %    tLSCI=getSLSCI(data,25,'gpu','none')
 %
 % Other m-files required: none
@@ -29,32 +31,29 @@
 %------------- BEGIN CODE --------------
 
 function tLSCI=getTLSCI(data,kernelSize,procType,dsType)
-if strcmp(dsType,'none')
-T=1:1:size(data,3)-kernelSize+1;
-elseif strcmp(dsType,'kernel')
-T=1:kernelSize:size(data,3)-kernelSize+1;
-else
-T=1:1:size(data,3)-kernelSize+1;
+if strcmp(dsType,'kernel')
+    T=1:kernelSize:size(data,3)-kernelSize+1;
+else  % dsType='none'
+    T=1:1:size(data,3)-kernelSize+1;
 end
-
 tLSCI=zeros(size(data,1),size(data,2),length(T),'single');
 counter=1;
-if strcmp(procType,'cpu')
-for i=T
-    frames=single(data(:,:,i:i+kernelSize-1));
-    frameMean=squeeze(mean(frames,3));
-    frameSTD=squeeze(std(frames,0,3));
-    tLSCI(:,:,counter)=frameSTD./frameMean;    
-    counter=counter+1;
-end
-elseif strcmp(procType,'gpu')
-for i=T
-    frames=gpuArray(single(data(:,:,i:i+kernelSize-1)));
-    frameMean=squeeze(mean(frames,3));
-    frameSTD=squeeze(std(frames,0,3));
-    tLSCI(:,:,counter)=gather(frameSTD./frameMean);    
-    counter=counter+1;
-end
+if strcmp(procType,'gpu')
+    for i=T
+        frames=gpuArray(single(data(:,:,i:i+kernelSize-1)));
+        frameMean=squeeze(mean(frames,3));
+        frameSTD=squeeze(std(frames,0,3));
+        tLSCI(:,:,counter)=gather(frameSTD./frameMean);
+        counter=counter+1;
+    end
+else %procType='cpu' - single thread cpu processing
+    for i=T
+        frames=single(data(:,:,i:i+kernelSize-1));
+        frameMean=squeeze(mean(frames,3));
+        frameSTD=squeeze(std(frames,0,3));
+        tLSCI(:,:,counter)=frameSTD./frameMean;
+        counter=counter+1;
+    end
 end
 end
 

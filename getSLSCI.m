@@ -6,14 +6,16 @@
 % Inputs:
 %    data       - raw laser speckle data as 3d [y,x,t] matrix
 %    kernelSize - number of pixels in a side of the kernel
-%    procType   - choose the processor type: use 'cpu' or 'gpu'
-%    dsType     - downsampling type result is either full frame or frame 
+%    procType   - choose the processor type: use 'cpu','gpu' or 'cluster'
+%                 (for multiple cpu's). 'cpu' is default.
+%    dsType     - downsampling type result is either full frame or frame
 %                 downsampled by kernel size. Use: 'none' or 'kernel'
+%                 'none' is default
 %
 % Outputs:
 %    sLSCI      - processed data as [y,x,t] 3d matrix
 %
-% Example: 
+% Example:
 %    sLSCI=getSLSCI(data,7,'gpu','none')
 %
 % Other m-files required: none
@@ -30,39 +32,43 @@
 %------------- BEGIN CODE --------------
 
 function sLSCI=getSLSCI(data,kernelSize,procType,dsType)
-if strcmp(dsType,'none')
-Y=1:1:size(data,1);
-X=1:1:size(data,2);
-elseif strcmp(dsType,'kernel')
-halfSize=floor(kernelSize/2);
-Y=halfSize+1:kernelSize:size(data,1)-halfSize;
-X=halfSize+1:kernelSize:size(data,2)-halfSize;
-else
-Y=1:1:size(data,1);
-X=1:1:size(data,2);
+if strcmp(dsType,'kernel')
+    halfSize=floor(kernelSize/2);
+    Y=halfSize+1:kernelSize:size(data,1)-halfSize;
+    X=halfSize+1:kernelSize:size(data,2)-halfSize;
+else % dsType='none'
+    Y=1:1:size(data,1);
+    X=1:1:size(data,2);
 end
 
 sLSCI=zeros(length(Y),length(X),size(data,3),'single');
 
-if strcmp(procType,'cpu')
-    for i=1:1:size(data,3)
-        frame=single(data(:,:,i));
-        frameMean=imfilter(frame,fspecial('average',[kernelSize kernelSize]));
-        frameSTD=stdfilt(frame,ones(kernelSize));
-        sLSCI(:,:,i)=frameSTD(Y,X)./frameMean(Y,X);
-    end
-elseif strcmp(procType,'gpu')
+if strcmp(procType,'gpu')
     for i=1:1:size(data,3)
         frame=gpuArray(single(data(:,:,i)));
         frameMean=imfilter(frame,fspecial('average',[kernelSize kernelSize]));
         frameSTD=stdfilt(frame,ones(kernelSize));
         sLSCI(:,:,i)=gather(frameSTD(Y,X)./frameMean(Y,X));
     end
+elseif strcmp(procType,'cluster')
+    parfor i=1:1:size(data,3)
+        frame=single(data(:,:,i));
+        frameMean=imfilter(frame,fspecial('average',[kernelSize kernelSize]));
+        frameSTD=stdfilt(frame,ones(kernelSize));
+        sLSCI(:,:,i)=frameSTD(Y,X)./frameMean(Y,X);
+    end
+else %procType='cpu' - single thread cpu processing
+    for i=1:1:size(data,3)
+        frame=single(data(:,:,i));
+        frameMean=imfilter(frame,fspecial('average',[kernelSize kernelSize]));
+        frameSTD=stdfilt(frame,ones(kernelSize));
+        sLSCI(:,:,i)=frameSTD(Y,X)./frameMean(Y,X);
+    end
 end
 end
 
 %------------- END OF CODE --------------
 % Comments: large input data can lead to the memory overflow, particularily
-% when uint8 imput data is provided. This can be controlled by additional
+% when uint8 input data is provided. This can be controlled by additional
 % outer loop and/or by conversion sLSCI data to scaled integer or by
 % allowing downsampling by kernel size

@@ -1,26 +1,33 @@
-%getLSCIFolderIMG - Reads raw burst files recorded by speckleSoftware 
-%(A. Dunn) in the specified folder and processes them in chosen type of 
+%getLSCIFolderIMG - Reads raw burst files recorded by speckleSoftware
+%(A. Dunn) in the specified folder and processes them in chosen type of
 %laser speckle contrast
 %
 % Syntax:  [output1,output2] = function_name(input1,input2,input3,input4,input5,input6,input7)
 %
 % Inputs:
-%    folderName - folder name as string
-%    burstStart - first burst to read
-%    burstN     - number of bursts to read, or [] if read all bursts
-%                 starting from burstStart
-%    lscType    - type of laser speckle contraast: use 'sLSCI' or 'tLSCI'
-%    kernelSize - number of pixels in the kernel (or in the side of it)
-%    procType   - choose the processor type: use 'cpu' or 'gpu'
-%    dsType     - downsampling type result is either same size as data or 
-%                 downsampled by kernel size. Use: 'none' or 'kernel'
+%    procType     - run as single thread or as multicore: use 'cluster' or
+%                   'thread'. Cluster is default, compatible only with CPU
+%                   laser speckle processing
+%    folderName   - folder name as string
+%    burstStart   - first burst to read
+%    burstN       - number of bursts to read, or [] to read all bursts
+%                   starting from burstStart
+%    lscType      - type of laser speckle contraast: use 'sLSCI' or 'tLSCI'
+%                   sLSCI is default.
+%    kernelSize   - number of pixels in the kernel (or in the side of it)
+%    procTypeLSCI - choose the processor type: use 'cpu' or 'gpu'.
+%                   'cpu' is default
+%    dsType       - downsampling type result is either same size as data or
+%                   downsampled by kernel size. Use: 'none' or 'kernel'.
+%                   'none' is default.
 %
 % Outputs:
 %    LSCI         - processed laser speckle data as [y,x,t] 3d matrix
-%    time         - time in seconds, 0 for the first burst.
+%    time         - time in seconds, first value counted from the first day
+%                   of the month.
 %
 % Example:
-%    [LSCI,time]=getLSCIFolderIMG('D:\trial 1 left',1,100,'sLSCI',7,'gpu','full');
+%    [LSCI,time]=getLSCIFolderIMG('cluster','D:\trial 1 left',1,[],'sLSCI',7,'cpu','full');
 %
 % Other m-files required: readSingleIMG.m, getSLSCI.m, getTLSCI.m
 % Subfunctions: none
@@ -35,21 +42,30 @@
 
 %------------- BEGIN CODE --------------
 
-function [LSCI,time]=getLSCIFolderIMG(folderName,burstStart,burstN,lscType,kernelSize,procType,dsType)
-workingDir=pwd;
+function [LSCI,time,imgsPerBurst]=getLSCIFolderIMG(procType,folderName,burstStart,burstN,lscType,kernelSize,procTypeLSCI,dsType)
+% add directory with code to path
+[workDir]=fileparts(mfilename('fullpath'));
+addpath(workDir);
+
+% if ~strcmp(procTypeLSCI,'cpu') && strcmp(procType,'cluster')
+%     ME = MException('Error:WrongParams', ...
+%         'Multi-file cluster processing is only supported for "cpu" laser speckle imaging contrast analysis');
+%     throw(ME);
+% end
+
+% find raw files and select the subset of interest
 cd(folderName);
 dataFiles=dir('img.*');
-dataFiles(count({dataFiles.name},'.')>1)=[]; % exclude all files except img stacks
+dataFiles(count({dataFiles.name},'.')>1)=[];
 [~,order]=sort({dataFiles.name});
 dataFiles=dataFiles(order);
-
 if ~isempty(burstN)
     dataFiles=dataFiles(burstStart:burstStart+burstN-1);
 end
 
-tic;
+% get and process the first file to fetch data dimensions and time estimate
+tic
 [subdata, ~, timeStamp]=readSingleIMG(dataFiles(1).name);
-
 imgsPerBurst=size(subdata,3);
 filesN=length(dataFiles);
 
@@ -59,38 +75,70 @@ if strcmp(lscType,'tLSCI') && imgsPerBurst<kernelSize
     throw(ME);
 end
 
-time=zeros(1,filesN);
-time(1)=getTime(timeStamp);
-
-if strcmp(lscType,'sLSCI')
-    subLSCI=getSLSCI(subdata,kernelSize,procType,dsType);
-elseif strcmp(lscType,'tLSCI')
-    subLSCI=getTLSCI(subdata,kernelSize,procType,'kernel');
+if strcmp(lscType,'tLSCI')
+    subLSCI=getTLSCI(subdata,kernelSize,procTypeLSCI,dsType);
+else %lscType='sLSCI'
+    subLSCI=getSLSCI(subdata,kernelSize,procTypeLSCI,dsType);
 end
 subLSCI=mean(subLSCI,3);
 elapsedTime=toc;
 
-disp(['Current time is ', datestr(now,'HH:mm:ss')]);
-disp([num2str(filesN),' burst files to process. Remaining time is approximately ~',num2str(elapsedTime*filesN),'s'])
-
 LSCI=zeros(size(subLSCI,1),size(subLSCI,2),filesN,'single');
-LSCI(:,:,1)=subLSCI;
-for i=2:1:filesN
-    [subdata, ~, timeStamp]=readSingleIMG(dataFiles(i).name);
-    
-    if strcmp(lscType,'sLSCI')
-        subLSCI=getSLSCI(subdata,kernelSize,procType,dsType);
-    elseif strcmp(lscType,'tLSCI')
-        subLSCI=getTLSCI(subdata,kernelSize,procType,'kernel');
-    end
-    subLSCI=mean(subLSCI,3);
-    LSCI(:,:,i)=subLSCI;
-    time(i)=getTime(timeStamp);
-    waitbar(i./filesN);
-end
-time=time-time(1);
+time=zeros(1,filesN);
 
-cd(workingDir);
+% process the data
+disp(['Current time is ', datestr(now,'HH:mm:ss')]);
+if strcmp(procType,'thread')
+    time(1)=getTime(timeStamp);
+    LSCI(:,:,1)=subLSCI;
+    disp([num2str(filesN),' burst files to process. Time remaining ~',num2str(elapsedTime*(filesN-1)),'s'])
+    for i=2:1:filesN
+        [subdata, ~, timeStamp]=readSingleIMG(dataFiles(i).name);
+        
+        if strcmp(lscType,'TLSCI')
+            subLSCI=getTLSCI(subdata,kernelSize,procTypeLSCI,dsType);
+        else %lscType='sLSCI'
+            subLSCI=getSLSCI(subdata,kernelSize,procTypeLSCI,dsType);
+        end
+        subLSCI=mean(subLSCI,3);
+        LSCI(:,:,i)=subLSCI;
+        time(i)=getTime(timeStamp);
+    end
+else %cluster case
+    pool=gcp;
+    tic
+    parfor i=1:1:pool.NumWorkers
+        [subdata, ~, timeStamp]=readSingleIMG(dataFiles(i).name);
+        if strcmp(lscType,'tLSCI')
+            subLSCI=getTLSCI(subdata,kernelSize,procTypeLSCI,dsType);
+        else %lscType='sLSCI'
+            subLSCI=getSLSCI(subdata,kernelSize,procTypeLSCI,dsType);
+        end
+        subLSCI=mean(subLSCI,3);
+        LSCI(:,:,i)=subLSCI;
+        timeStamps{i}=timeStamp;
+    end
+    elapsedTime=toc;
+    elapsedTime=elapsedTime./pool.NumWorkers;
+    disp([num2str(filesN),' burst files to process. Time remaining ~',num2str(elapsedTime*(filesN-pool.NumWorkers)),'s'])
+    
+    parfor i=pool.NumWorkers+1:1:filesN
+        [subdata, ~, timeStamp]=readSingleIMG(dataFiles(i).name);
+        if strcmp(lscType,'tLSCI')
+            subLSCI=getTLSCI(subdata,kernelSize,procTypeLSCI,dsType);
+        else %lscType='sLSCI'
+            subLSCI=getSLSCI(subdata,kernelSize,procTypeLSCI,dsType);
+        end
+        subLSCI=mean(subLSCI,3);
+        LSCI(:,:,i)=subLSCI;
+        timeStamps{i}=timeStamp;
+    end
+    for i=1:1:filesN
+        time(i)=getTime(timeStamps{i});
+    end
+end
+
+cd(workDir);
 
     function t=getTime(tstamp)
         %Does not work if recording spans 2 different months.
@@ -102,5 +150,5 @@ end
 
 %------------- END OF CODE --------------
 % Comments: Speckle contrast calculated from images in the same burst is
-% averaged. Time calculation will fail in case if recording spans 2
+% averaged. Time values calculation will fail in case if recording spans 2
 % different months.
