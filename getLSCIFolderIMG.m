@@ -47,11 +47,11 @@ function [LSCI,time,imgsPerBurst]=getLSCIFolderIMG(procType,folderName,burstStar
 [workDir]=fileparts(mfilename('fullpath'));
 addpath(workDir);
 
-% if ~strcmp(procTypeLSCI,'cpu') && strcmp(procType,'cluster')
-%     ME = MException('Error:WrongParams', ...
-%         'Multi-file cluster processing is only supported for "cpu" laser speckle imaging contrast analysis');
-%     throw(ME);
-% end
+if strcmp(procTypeLSCI,'cluster') && strcmp(procType,'cluster')
+    ME = MException('Error:WrongParams', ...
+        'Execution of cluster inside of cluster');
+    throw(ME);
+end
 
 % find raw files and select the subset of interest
 cd(folderName);
