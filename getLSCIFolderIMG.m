@@ -20,6 +20,8 @@
 %    dsType       - downsampling type result is either same size as data or
 %                   downsampled by kernel size. Use: 'none' or 'kernel'.
 %                   'none' is default.
+%    toCrop       - Crop flag. If 1, then allows you to select the crop
+%                   area before processing.
 %
 % Outputs:
 %    LSCI         - processed laser speckle data as [y,x,t] 3d matrix
@@ -42,7 +44,7 @@
 
 %------------- BEGIN CODE --------------
 
-function [LSCI,time,imgsPerBurst]=getLSCIFolderIMG(procType,folderName,burstStart,burstN,lscType,kernelSize,procTypeLSCI,dsType)
+function [LSCI,time,imgsPerBurst]=getLSCIFolderIMG(procType,folderName,burstStart,burstN,lscType,kernelSize,procTypeLSCI,dsType,toCrop)
 % add directory with code to path
 [workDir]=fileparts(mfilename('fullpath'));
 addpath(workDir);
@@ -66,6 +68,20 @@ end
 % get and process the first file to fetch data dimensions and time estimate
 tic
 [subdata, ~, timeStamp]=readSingleIMG(dataFiles(1).name);
+elapsedTime=toc;
+
+if toCrop==1
+    figure
+    imagesc(squeeze(mean(subdata,3)));
+    title('Select crop area')
+    h=imrect;
+    pos = wait(h);
+    pos=round(pos);
+    cropY=pos(2):1:pos(2)+pos(4);
+    cropX=pos(1):1:pos(1)+pos(3);
+    subdata=subdata(cropY,cropX,:);
+end
+
 imgsPerBurst=size(subdata,3);
 filesN=length(dataFiles);
 
@@ -81,7 +97,7 @@ else %lscType='sLSCI'
     subLSCI=getSLSCI(subdata,kernelSize,procTypeLSCI,dsType);
 end
 subLSCI=mean(subLSCI,3);
-elapsedTime=toc;
+elapsedTime=elapsedTime+toc;
 
 LSCI=zeros(size(subLSCI,1),size(subLSCI,2),filesN,'single');
 time=zeros(1,filesN);
@@ -94,7 +110,9 @@ if strcmp(procType,'thread')
     disp([num2str(filesN),' burst files to process. Time remaining ~',num2str(elapsedTime*(filesN-1)),'s'])
     for i=2:1:filesN
         [subdata, ~, timeStamp]=readSingleIMG(dataFiles(i).name);
-        
+        if toCrop==1
+            subdata=subdata(cropY,cropX,:);
+        end
         if strcmp(lscType,'TLSCI')
             subLSCI=getTLSCI(subdata,kernelSize,procTypeLSCI,dsType);
         else %lscType='sLSCI'
@@ -109,6 +127,9 @@ else %cluster case
     tic
     parfor i=1:1:pool.NumWorkers
         [subdata, ~, timeStamp]=readSingleIMG(dataFiles(i).name);
+        if toCrop==1
+            subdata=subdata(cropY,cropX,:);
+        end
         if strcmp(lscType,'tLSCI')
             subLSCI=getTLSCI(subdata,kernelSize,procTypeLSCI,dsType);
         else %lscType='sLSCI'
@@ -124,6 +145,9 @@ else %cluster case
     
     parfor i=pool.NumWorkers+1:1:filesN
         [subdata, ~, timeStamp]=readSingleIMG(dataFiles(i).name);
+        if toCrop==1
+            subdata=subdata(cropY,cropX,:);
+        end
         if strcmp(lscType,'tLSCI')
             subLSCI=getTLSCI(subdata,kernelSize,procTypeLSCI,dsType);
         else %lscType='sLSCI'
