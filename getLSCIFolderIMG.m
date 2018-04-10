@@ -29,7 +29,7 @@
 %                   of the month.
 %
 % Example:
-%    [LSCI,time]=getLSCIFolderIMG('cluster','D:\trial 1 left',1,[],'sLSCI',7,'cpu','full');
+%    [LSCI,time]=getLSCIFolderIMG('cluster','D:\trial 1 left',1,[],'sLSCI',7,'cpu','full',0);
 %
 % Other m-files required: readSingleIMG.m, getSLSCI.m, getTLSCI.m
 % Subfunctions: none
