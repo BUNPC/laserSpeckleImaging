@@ -1,4 +1,5 @@
-%run.m - example of the run script for the laser speckle contrast analysis
+%Example of the run script for the laser speckle contrast analysis.
+%Includes loading the raw data, contrast calculation, some visualization
 % Author: DD Postnov, PhD
 % BOAS lab, Boston University
 % email address: dpostnov@bu.edu
